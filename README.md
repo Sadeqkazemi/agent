@@ -69,13 +69,34 @@ Inside `chat` you can also type: `/teach question => answer`
 
 All outputs are stored in `runs/`: model versions, `registry.json`, `journal.jsonl` (a log of every cycle), and `strategies.json`.
 
-## Configuration
+## Model sizes
 
-A bigger model (if you have a GPU or more time):
+The network is a modern decoder-only transformer: rotary position embeddings (RoPE), RMSNorm,
+SwiGLU feed-forward layers, weight tying and a KV cache for fast generation. Pick a size at init:
+
+| `--size` | Parameters | Layers × width | Context | Vocab | Where it is practical |
+|---|---|---|---|---|---|
+| `tiny` (default) | ~1M | 4 × 128 | 128 | 512 | any CPU, minutes |
+| `small` | ~12M | 6 × 384 | 256 | 4096 | CPU (hours) or any GPU (minutes) |
+| `medium` | ~92M | 12 × 768 | 512 | 8192 | a GPU with 8 GB+ |
+| `large` | ~320M | 24 × 1024 | 1024 | 16384 | a GPU with 24 GB+ |
 
 ```bash
-python -m selfimprove init --force --layers 8 --embd 384 --heads 6 --vocab 4096 --block 256 --steps 5000
+python -m selfimprove init --force --size small
+python -m selfimprove init --force --size medium --steps 10000   # any preset value can be overridden
 ```
+
+On a GPU, training automatically uses bfloat16 mixed precision. Gradient accumulation (`--accum`)
+gives large effective batches on small memory. The `grow` action keeps adding layers during
+self-improvement (up to `max_layers`, default 48), so a model can also start small and grow.
+
+**Bigger models need more text.** A 12M-parameter model needs at least tens of megabytes of text,
+a 92M model hundreds of megabytes. With only the sample corpus, larger models just memorize it.
+The tokenizer trainer is incremental and the encoded corpus is cached in `runs/`, so large corpora are fine.
+
+Checkpoints from before this architecture (version 1) can't be loaded. Run `init --force` to rebuild.
+
+## Configuration
 
 Diagnosis and promotion thresholds (target accuracy, overfitting limit, maximum number of layers, etc.) are in `ImproveConfig` in `selfimprove/config.py` and can be overridden by creating `runs/settings.json`, for example:
 
@@ -85,7 +106,7 @@ Diagnosis and promotion thresholds (target accuracy, overfitting limit, maximum 
 
 ## Limitations
 
-- This is a small model that also runs on CPU. With the sample data it learns simple skills, but open-ended ChatGPT-like conversation **requires far more data (gigabytes of text) and strong hardware (a GPU)**.
+- Even the `large` preset is far smaller than commercial assistants. With the sample data the model learns simple skills, but open-ended ChatGPT-like conversation **requires far more data (gigabytes of text) and strong hardware (a GPU)**.
 - "Self-improvement" means improving the weights, hyperparameters and model size against measurable criteria. The model does not rewrite its own code — deliberately, because unsupervised code changes would make the system untrustworthy.
 - The model only improves at things that can be checked automatically. For each new ability you want, add a verifiable skill or new facts.
 

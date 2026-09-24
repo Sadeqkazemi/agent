@@ -16,8 +16,11 @@ def corpus_loss(model, tokens: torch.Tensor) -> float:
     x, y = fixed_windows(tokens, model.cfg.block_size)
     dev = device()
     model.to(dev).eval()
-    _, loss = model(x.to(dev), y.to(dev))
-    return loss.item()
+    total = 0.0
+    for i in range(0, len(x), 8):  # chunks keep memory bounded for big models
+        _, loss = model(x[i:i + 8].to(dev), y[i:i + 8].to(dev))
+        total += loss.item() * len(x[i:i + 8])
+    return total / len(x)
 
 
 @torch.no_grad()

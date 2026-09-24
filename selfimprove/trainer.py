@@ -37,30 +37,38 @@ def train(model, cfg: TrainConfig, sources: list[tuple[torch.Tensor, float]], lo
     gen = torch.Generator().manual_seed(seed)
     bs, T = cfg.batch_size, model.cfg.block_size
     losses, diverged, t0 = [], False, time.time()
+    use_amp = dev.type == "cuda"
+    micro = max(1, cfg.grad_accum)
     for step in range(cfg.steps):
-        # split the batch across sources proportionally to their weights
-        counts = torch.multinomial(weights, bs, replacement=True, generator=gen).bincount(minlength=len(sources))
-        xs, ys = [], []
-        for (data, _), c in zip(sources, counts.tolist()):
-            if c:
-                x, y = get_batch(data, T, c, gen)
-                xs.append(x)
-                ys.append(y)
-        x, y = torch.cat(xs).to(dev), torch.cat(ys).to(dev)
         for g in opt.param_groups:
             g["lr"] = lr_at(step, cfg)
-        _, loss = model(x, y)
+        total = 0.0
+        for _ in range(micro):
+            # split the micro-batch across sources proportionally to their weights
+            counts = torch.multinomial(weights, bs, replacement=True, generator=gen).bincount(minlength=len(sources))
+            xs, ys = [], []
+            for (data, _), c in zip(sources, counts.tolist()):
+                if c:
+                    x, y = get_batch(data, T, c, gen)
+                    xs.append(x)
+                    ys.append(y)
+            x, y = torch.cat(xs).to(dev), torch.cat(ys).to(dev)
+            with torch.autocast(dev.type, dtype=torch.bfloat16, enabled=use_amp):
+                _, loss = model(x, y)
+            if not torch.isfinite(loss):
+                break
+            (loss / micro).backward()
+            total += loss.item() / micro
         if not torch.isfinite(loss):
             diverged = True
             log(f"  step {step}: loss is not finite, stopping")
             break
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
         opt.step()
-        losses.append(loss.item())
+        opt.zero_grad(set_to_none=True)
+        losses.append(total)
         if step % max(1, cfg.steps // 5) == 0 or step == cfg.steps - 1:
-            log(f"  step {step:5d}/{cfg.steps}  loss {loss.item():.3f}  lr {lr_at(step, cfg):.2e}")
+            log(f"  step {step:5d}/{cfg.steps}  loss {total:.3f}  lr {lr_at(step, cfg):.2e}")
     model.eval()
     tail = losses[-max(1, len(losses) // 10):] if losses else [float("nan")]
     return {

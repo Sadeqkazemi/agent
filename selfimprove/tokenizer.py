@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 # Pre-tokenization: words (with optional leading space), single digits,
@@ -38,24 +38,41 @@ class BPETokenizer:
         return 256 + len(self.merges)
 
     @classmethod
-    def train(cls, text: str, vocab_size: int) -> "BPETokenizer":
-        words = Counter(PAT.findall(text))
-        seqs = {w: list(w.encode("utf-8")) for w in words}
+    def train(cls, text: str, vocab_size: int, max_chars: int = 50_000_000) -> "BPETokenizer":
+        """Incremental BPE: only words containing the merged pair are touched each step,
+        so training stays fast on large corpora."""
+        words = Counter(PAT.findall(text[:max_chars]))
+        seqs = [list(w.encode("utf-8")) for w in words]
+        freq = list(words.values())
+        pair_count: Counter = Counter()
+        where: dict[tuple[int, int], set[int]] = defaultdict(set)
+        for wi, s in enumerate(seqs):
+            for p in zip(s, s[1:]):
+                pair_count[p] += freq[wi]
+                where[p].add(wi)
         merges: list[tuple[int, int]] = []
         for i in range(max(0, vocab_size - 256)):
-            pairs: Counter = Counter()
-            for w, count in words.items():
-                s = seqs[w]
-                for p in zip(s, s[1:]):
-                    pairs[p] += count
-            if not pairs:
+            if not pair_count:
                 break
-            best, count = pairs.most_common(1)[0]
-            if count < 2:
+            best = max(pair_count, key=pair_count.__getitem__)
+            if pair_count[best] < 2:
                 break
+            new_id = 256 + i
             merges.append(best)
-            for w in words:
-                seqs[w] = _merge(seqs[w], best, 256 + i)
+            for wi in where.pop(best, ()):
+                old, c = seqs[wi], freq[wi]
+                new = _merge(old, best, new_id)
+                if new == old:
+                    continue
+                for p in zip(old, old[1:]):
+                    pair_count[p] -= c
+                    if pair_count[p] <= 0:
+                        del pair_count[p]
+                for p in zip(new, new[1:]):
+                    pair_count[p] += c
+                    where[p].add(wi)
+                seqs[wi] = new
+            pair_count.pop(best, None)
         return cls(merges)
 
     def _encode_word(self, word: str) -> list[int]:

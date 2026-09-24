@@ -17,7 +17,8 @@ def load_corpus(corpus_dir: Path) -> str:
 
 def split_corpus(tokens: list[int], val_fraction: float = 0.1) -> tuple[torch.Tensor, torch.Tensor]:
     n = int(len(tokens) * (1 - val_fraction))
-    return torch.tensor(tokens[:n], dtype=torch.long), torch.tensor(tokens[n:], dtype=torch.long)
+    t = torch.as_tensor(tokens, dtype=torch.long)
+    return t[:n], t[n:]
 
 
 def task_stream(tok, skills: dict[str, Skill], weights: dict[str, float], n_examples: int,

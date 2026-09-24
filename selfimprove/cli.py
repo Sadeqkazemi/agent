@@ -9,7 +9,7 @@ import time
 
 import torch
 
-from .config import ModelConfig, TrainConfig, Workspace
+from .config import PRESETS, ModelConfig, TrainConfig, Workspace
 from .context import Context
 from .evaluator import answer, evaluate
 from .loop import bootstrap, doctor, improve_cycle, read_journal, self_repair
@@ -19,8 +19,11 @@ from .tokenizer import BPETokenizer
 
 
 def cmd_init(ws, a):
-    mcfg = ModelConfig(n_layer=a.layers, n_embd=a.embd, n_head=a.heads, vocab_size=a.vocab, block_size=a.block)
-    tcfg = TrainConfig(steps=a.steps, lr=a.lr, batch_size=a.batch)
+    model_preset, train_preset = PRESETS[a.size]
+    overrides = {"n_layer": a.layers, "n_embd": a.embd, "n_head": a.heads, "vocab_size": a.vocab, "block_size": a.block}
+    mcfg = ModelConfig(**{**model_preset, **{k: v for k, v in overrides.items() if v is not None}})
+    overrides = {"steps": a.steps, "lr": a.lr, "batch_size": a.batch, "grad_accum": a.accum}
+    tcfg = TrainConfig(**{**train_preset, **{k: v for k, v in overrides.items() if v is not None}})
     if ws.registry.exists() and not a.force:
         sys.exit("already initialised (use --force to start over)")
     if a.force:
@@ -118,14 +121,11 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("init", help="train tokenizer and the first model")
-    s.add_argument("--layers", type=int, default=4)
-    s.add_argument("--embd", type=int, default=128)
-    s.add_argument("--heads", type=int, default=4)
-    s.add_argument("--vocab", type=int, default=512)
-    s.add_argument("--block", type=int, default=128)
-    s.add_argument("--steps", type=int, default=600)
-    s.add_argument("--lr", type=float, default=3e-3)
-    s.add_argument("--batch", type=int, default=32)
+    s.add_argument("--size", choices=list(PRESETS), default="tiny",
+                   help="tiny ~1M, small ~12M, medium ~92M, large ~320M parameters")
+    for flag in ("--layers", "--embd", "--heads", "--vocab", "--block", "--steps", "--batch", "--accum"):
+        s.add_argument(flag, type=int, help="override the preset")
+    s.add_argument("--lr", type=float, help="override the preset")
     s.add_argument("--force", action="store_true")
     s.set_defaults(fn=cmd_init)
 

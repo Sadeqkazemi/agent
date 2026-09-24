@@ -7,6 +7,9 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 
+ARCH_VERSION = 2  # bump when the network layout changes incompatibly
+
+
 @dataclass
 class ModelConfig:
     vocab_size: int = 512
@@ -15,12 +18,14 @@ class ModelConfig:
     n_head: int = 4
     n_embd: int = 128
     dropout: float = 0.1
+    arch: int = ARCH_VERSION
 
 
 @dataclass
 class TrainConfig:
     steps: int = 300
     batch_size: int = 32
+    grad_accum: int = 1            # micro-batches per optimizer step
     lr: float = 3e-3
     min_lr_ratio: float = 0.1
     warmup: int = 20
@@ -42,8 +47,22 @@ class ImproveConfig:
     plateau_cycles: int = 3        # cycles without promotion before "plateau"
     min_delta: float = 0.002       # candidate must beat champion score by this
     regression_tolerance: float = 0.1  # max allowed per-skill accuracy drop
-    max_layers: int = 12
+    max_layers: int = 48
     ucb_c: float = 0.05            # exploration strength of the strategy planner
+
+
+# Size presets. Parameter counts are approximate and include embeddings.
+PRESETS = {
+    #          model                                                           training
+    "tiny":   (dict(n_layer=4, n_head=4, n_embd=128, block_size=128, vocab_size=512),
+               dict(steps=600, lr=3e-3, batch_size=32, grad_accum=1)),          # ~1M,   CPU minutes
+    "small":  (dict(n_layer=6, n_head=6, n_embd=384, block_size=256, vocab_size=4096),
+               dict(steps=2000, lr=1e-3, batch_size=16, grad_accum=2)),         # ~12M,  CPU hours / GPU minutes
+    "medium": (dict(n_layer=12, n_head=12, n_embd=768, block_size=512, vocab_size=8192),
+               dict(steps=5000, lr=6e-4, batch_size=16, grad_accum=4)),         # ~92M,  needs a GPU
+    "large":  (dict(n_layer=24, n_head=16, n_embd=1024, block_size=1024, vocab_size=16384),
+               dict(steps=20000, lr=3e-4, batch_size=8, grad_accum=16)),        # ~320M, needs a strong GPU
+}
 
 
 def from_dict(cls, data: dict | None):

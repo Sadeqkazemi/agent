@@ -7,7 +7,7 @@ import time
 
 import torch
 
-from .config import ModelConfig, TrainConfig, Workspace, from_dict, to_dict
+from .config import ARCH_VERSION, ModelConfig, TrainConfig, Workspace, from_dict, to_dict
 from .model import GPT
 
 
@@ -75,6 +75,8 @@ class Registry:
         if vid is None:
             raise FileNotFoundError("no model yet — run `python -m selfimprove init` first")
         ckpt = torch.load(self.path(vid), map_location="cpu", weights_only=True)
+        if ckpt["model_cfg"].get("arch") != ARCH_VERSION:
+            raise ValueError(f"{vid} uses an older model architecture; run `init --force` to rebuild")
         model = GPT(from_dict(ModelConfig, ckpt["model_cfg"]))
         model.load_state_dict(ckpt["state"])
         model.eval()

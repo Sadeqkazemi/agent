@@ -117,3 +117,34 @@ def test_self_repair_gives_up_without_healthy_version(tmp_path):
     reg.path("v0001").unlink()
     with pytest.raises(RuntimeError):
         self_repair(ws, Registry(ws), log=lambda *a: None)
+
+
+def test_kv_cache_matches_full_recompute():
+    m = tiny_model()
+    prompt = torch.randint(0, 300, (1, 5))
+    fast = m.generate(prompt, 40)  # crosses block_size=32, exercising the sliding window
+    slow = prompt
+    for _ in range(40):
+        logits, _ = m(slow[:, -32:])
+        slow = torch.cat([slow, logits[:, -1].argmax(-1, keepdim=True)], dim=1)
+    assert torch.equal(fast[:, :32], slow[:, :32])
+    assert fast.shape == slow.shape
+
+
+def test_presets_build():
+    from selfimprove.config import PRESETS
+    for model_cfg, train_cfg in PRESETS.values():
+        TrainConfig(**train_cfg)
+        assert ModelConfig(**model_cfg).n_embd % model_cfg["n_head"] == 0
+
+
+def test_old_architecture_checkpoint_is_refused(tmp_path):
+    ws = Workspace(tmp_path)
+    ws.ensure()
+    reg = Registry(ws)
+    reg.record(reg.next_id(), None, "x", report({"a": 1.0}), True, tiny_model(), TrainConfig())
+    ckpt = torch.load(reg.path("v0001"), weights_only=True)
+    ckpt["model_cfg"]["arch"] = 1
+    torch.save(ckpt, reg.path("v0001"))
+    with pytest.raises(ValueError):
+        reg.load()
