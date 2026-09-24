@@ -1,0 +1,10 @@
+A language model is a program that learns to predict the next word in a text. It reads a large amount of writing and slowly discovers patterns: spelling, grammar, facts and style. The more good text it sees, the better it becomes.
+Learning means making mistakes and fixing them. A good student practices, checks the answers, finds what went wrong and practices that part again. Over time the weak parts become strong. A system that can measure its own mistakes can improve itself.
+The sun is a star. The earth moves around the sun once every year, and the moon moves around the earth about once every month. Water boils at one hundred degrees Celsius and freezes at zero degrees.
+Plants use sunlight, water and air to make their own food. This process is called photosynthesis. Animals eat plants or other animals. Every living thing needs water to survive.
+A computer follows instructions called a program. Programmers write programs in languages such as Python, C and JavaScript. A bug is a mistake in a program, and debugging is the work of finding and fixing bugs.
+Tests are small programs that check whether other programs work. When a test fails, the programmer knows that something is broken. Good software is tested often, and every change is checked before it is accepted.
+Numbers can be added, subtracted, multiplied and divided. Two plus three is five. Ten minus four is six. Six times seven is forty two. Sorting puts items in order, from the smallest to the largest.
+There are seven days in a week and twelve months in a year. Spring, summer, autumn and winter are the four seasons. Many people celebrate the new year with family and friends.
+Books keep knowledge safe for a long time. A library holds many books, and anyone can learn from them. Reading every day makes the mind stronger, just as exercise makes the body stronger.
+Hello! How are you today? I am fine, thank you. The weather is nice, so let us take a walk in the park. Goodbye, and have a good day.
