@@ -1,95 +1,95 @@
-# agent — مدل زبانی محلیِ خودبهبود
+# agent — a local, self-improving language model
 
-یک مدل زبانی (GPT کوچک) که **کاملاً آفلاین** روی سیستم خودتان آموزش می‌بیند و اجرا می‌شود.
-به هیچ API خارجی وصل نمی‌شود، و یک حلقه‌ی خودبهبودی دارد که:
+A small GPT-style language model that trains and runs **entirely offline** on your own machine.
+It never calls an external API, and it has a self-improvement loop that:
 
-1. **خودش را امتحان می‌کند:** loss، دقت در هر مهارت، میزان تکرار در متن تولیدی، سالم بودن وزن‌ها
-2. **عیب‌هایش را تشخیص می‌دهد:** مهارت ضعیف، overfitting، underfitting، ناپایداری، تکرار، درجا زدن
-3. **یک راه‌حل انتخاب می‌کند:** و یاد می‌گیرد کدام راه‌حل‌ها قبلاً واقعاً جواب داده‌اند
-4. **یک نسخه‌ی جدید می‌سازد** (آموزش هدفمند، آموزش روی جواب‌های درستِ خودش، تغییر هایپرپارامترها، یا **بزرگ‌تر کردن مدل**)
-5. **دوباره امتحان می‌دهد** و نسخه‌ی جدید فقط وقتی جایگزین می‌شود که واقعاً بهتر باشد و هیچ مهارتی را فراموش نکرده باشد؛ وگرنه کنار گذاشته می‌شود
+1. **Examines itself:** loss, accuracy per skill, repetition in generated text, numerical health of the weights
+2. **Diagnoses its faults:** weak skills, overfitting, underfitting, instability, repetition, plateaus
+3. **Chooses a fix:** and learns which fixes have actually worked before
+4. **Builds a new candidate version** (targeted training, training on its own verified answers, hyperparameter changes, or **growing the model**)
+5. **Re-examines the candidate** and promotes it only if it is genuinely better and has not forgotten any skill; otherwise the candidate is discarded
 
-اگر نسخه‌ی فعلی خراب شود (فایل آسیب‌دیده، وزن‌های NaN)، سیستم خودش به آخرین نسخه‌ی سالم برمی‌گردد.
+If the current model gets corrupted (damaged checkpoint, NaN weights), the system automatically rolls back to the last healthy version.
 
-## نصب
+## Installation
 
 ```bash
-pip install -r requirements.txt      # فقط PyTorch
+pip install -r requirements.txt      # only PyTorch
 ```
 
-## استفاده
+## Usage
 
 ```bash
-python -m selfimprove init                 # توکنایزر و مدل اول (v0001) را از روی data/ می‌سازد
-python -m selfimprove improve --cycles 5   # ۵ دور خودبهبودی
-python -m selfimprove improve --cycles 0 --hours 8   # ۸ ساعت پشت سر هم خودش را بهتر کند
-python -m selfimprove status               # نسخه‌ها، کارنامه‌ی راه‌حل‌ها، نمونه اشتباه‌های اخیر
-python -m selfimprove chat                 # گفتگو با بهترین نسخه
-python -m selfimprove teach "سوال" "جواب"  # یاد دادن یک دانسته‌ی جدید
-python -m selfimprove doctor               # خودآزمایی کل سیستم و تعمیر خودکار
+python -m selfimprove init                 # train the tokenizer and the first model (v0001) from data/
+python -m selfimprove improve --cycles 5   # run 5 self-improvement cycles
+python -m selfimprove improve --cycles 0 --hours 8   # keep improving for 8 hours
+python -m selfimprove status               # versions, strategy track record, recent mistakes
+python -m selfimprove chat                 # talk to the current best version
+python -m selfimprove teach "question" "answer"   # teach a new fact
+python -m selfimprove doctor               # self-test the whole system and auto-repair
 python -m selfimprove rollback --version v0003
 python -m selfimprove eval
 ```
 
-داخل `chat` هم می‌توانید بنویسید: `/teach سوال => جواب`
+Inside `chat` you can also type: `/teach question => answer`
 
-## یک دور خودبهبودی چه شکلی است
+## What one improvement cycle looks like
 
 ```
 [examine] champion v0004 (4 layers, 875,264 params)
-  skills add=10%  reverse=0%  sort=23%  copy=40%  knowledge=100%
+  skills add=3%  reverse=17%  sort=93%  copy=27%  knowledge=100%
 [diagnose]
-  - weak_skills (severity 1.00): below target: reverse=0%, add=10%, sort=23%, copy=40%
-  - overfitting (severity 0.61): val_loss exceeds train_loss by 1.22
-[fix] targeted_training {'skills': ['reverse', 'add', 'sort', 'copy']}
-[verify] candidate score ...
-[PROMOTED] v0005: improved (delta +0.0412). champion is now v0005
+  - overfitting (severity 1.00): val_loss exceeds train_loss by 10.44
+  - weak_skills (severity 0.97): below target: add=3%, reverse=17%, copy=27%
+[fix] targeted_training {'skills': ['add', 'reverse', 'copy']} for 'weak_skills'
+[verify] candidate score 0.4376  skills add=0%  reverse=13%  sort=80%  copy=57%  knowledge=100%
+[REJECTED] v0005: regression on sort: 93% -> 80%. champion is now v0004
 ```
 
-## عیب‌ها و راه‌حل‌ها
+## Faults and fixes
 
-| عیب تشخیص‌داده‌شده | نشانه | راه‌حل‌های ممکن |
+| Diagnosed fault | Symptom | Possible fixes |
 |---|---|---|
-| `weak_skills` | دقت یک مهارت زیر ۹۰٪ | `targeted_training` (تمرین بیشتر همان مهارت)، `self_training` |
-| `overfitting` | فاصله‌ی زیاد val_loss و train_loss | `regularize` (dropout و weight decay بیشتر) |
-| `underfitting` | train_loss بالا | `longer_training`، `grow` |
-| `repetition` | متن تولیدی در حلقه گیر می‌کند | `continue_training`، `regularize` |
-| `instability` | loss بی‌نهایت/NaN | `lower_lr` |
-| `plateau` | چند دور پشت سر هم بدون پیشرفت | `grow`، `lower_lr`، `longer_training` |
+| `weak_skills` | a skill is below the target accuracy (90%) | `targeted_training` (more practice on that skill), `self_training` |
+| `overfitting` | large gap between val_loss and train_loss | `regularize` (more dropout and weight decay) |
+| `underfitting` | high train_loss | `longer_training`, `grow` |
+| `repetition` | generated text gets stuck in loops | `continue_training`, `regularize` |
+| `instability` | infinite/NaN loss | `lower_lr` |
+| `plateau` | several cycles in a row without progress | `grow`, `lower_lr`, `longer_training` |
 
-- **`self_training`**: مدل به سوال‌های تازه جواب می‌دهد، یک بررسی‌کننده‌ی خودکار فقط جواب‌های درست را نگه می‌دارد، و مدل روی کار درستِ خودش آموزش می‌بیند (روش STaR).
-- **`grow` (آپگرید)**: لایه‌های جدید به مدل اضافه می‌شوند که در ابتدا دقیقاً هیچ تغییری در خروجی نمی‌دهند (خروجی‌شان صفر است)، پس مدل چیزی را فراموش نمی‌کند و ظرفیت بیشتری برای یادگیری پیدا می‌کند.
-- **حافظه‌ی راه‌حل‌ها** (`runs/strategies.json`): هر راه‌حل چند بار امتحان شده، چند بار برده و میانگین پیشرفتش چقدر بوده. انتخاب بعدی با الگوریتم UCB انجام می‌شود، یعنی راه‌حل‌های موفق بیشتر انتخاب می‌شوند و راه‌حل‌های کم‌امتحان‌شده هم شانس دارند.
+- **`self_training`**: the model answers new questions, an automatic verifier keeps only the correct answers, and the model trains on its own correct work (the STaR method).
+- **`grow` (upgrade)**: new layers are added whose outputs start at exactly zero, so the model's behaviour is unchanged at first. Nothing is forgotten, and the model gains capacity to learn more.
+- **Strategy memory** (`runs/strategies.json`): how many times each fix was tried, how often it won, and its average score gain. The next fix is chosen with a UCB bandit: successful fixes are preferred, and rarely tried ones still get a chance.
 
-## داده‌ها
+## Data
 
-- `data/corpus/*.txt` — متن خام برای یادگیری زبان. **مهم‌ترین چیز برای کیفیت مدل همین است.** متن نمونه فقط چند کیلوبایت است؛ هرچه متن بیشتری بگذارید (کتاب، مقاله، ویکی‌پدیای فارسی که یک بار دانلود کرده‌اید) مدل بهتر می‌نویسد.
-- `data/knowledge.jsonl` — دانسته‌ها به شکل `{"q": "...", "a": "..."}`. هم امتحان می‌شوند و هم آموزش داده می‌شوند.
-- مهارت‌های قابل‌بررسی در `selfimprove/skills.py` (جمع، برعکس کردن کلمه، مرتب‌سازی، کپی). برای اضافه کردن مهارت جدید یک تابع تولید سوال/جواب بنویسید و در `builtin_skills` ثبت کنید.
+- `data/corpus/*.txt` — raw text for learning the language. **This matters most for model quality.** The sample text is only a few kilobytes; the more text you add (books, articles, a Wikipedia dump downloaded once), the better the model writes.
+- `data/knowledge.jsonl` — facts as `{"q": "...", "a": "..."}`. They are both examined and trained on.
+- Verifiable skills live in `selfimprove/skills.py` (addition, word reversal, sorting, copying). To add a skill, write a function that generates question/answer pairs and register it in `builtin_skills`.
 
-همه‌ی خروجی‌ها در `runs/` ذخیره می‌شوند: نسخه‌های مدل، `registry.json`، `journal.jsonl` (گزارش هر دور)، `strategies.json`.
+All outputs are stored in `runs/`: model versions, `registry.json`, `journal.jsonl` (a log of every cycle), and `strategies.json`.
 
-## تنظیمات
+## Configuration
 
-مدل بزرگ‌تر (اگر GPU یا زمان بیشتری دارید):
+A bigger model (if you have a GPU or more time):
 
 ```bash
 python -m selfimprove init --force --layers 8 --embd 384 --heads 6 --vocab 4096 --block 256 --steps 5000
 ```
 
-معیارهای تشخیص و پذیرش (مثل دقت هدف، حد overfitting، حداکثر تعداد لایه) در `ImproveConfig` داخل `selfimprove/config.py` هستند و با ساختن فایل `runs/settings.json` قابل تغییرند، مثلاً:
+Diagnosis and promotion thresholds (target accuracy, overfitting limit, maximum number of layers, etc.) are in `ImproveConfig` in `selfimprove/config.py` and can be overridden by creating `runs/settings.json`, for example:
 
 ```json
 {"target_accuracy": 0.95, "max_layers": 16, "exam_size": 50}
 ```
 
-## محدودیت‌ها — واقع‌بینانه
+## Limitations
 
-- این یک مدل کوچک است که روی CPU هم اجرا می‌شود. با داده‌ی نمونه، مهارت‌های ساده را یاد می‌گیرد، اما گفتگوی آزاد در حد ChatGPT **نیاز به داده‌ی خیلی بیشتر (گیگابایت‌ها متن) و سخت‌افزار قوی (GPU)** دارد.
-- «خودبهبودی» یعنی بهبود وزن‌ها، هایپرپارامترها و اندازه‌ی مدل با معیارهای قابل‌اندازه‌گیری. مدل کد خودش را بازنویسی نمی‌کند — این عمداً است: تغییر خودکار کد بدون ناظر، سیستم را غیرقابل‌اعتماد می‌کند.
-- مدل فقط در چیزهایی بهتر می‌شود که بتوان آن‌ها را خودکار سنجید. برای هر توانایی جدیدی که می‌خواهید، یک مهارت قابل‌بررسی یا دانسته‌ی جدید اضافه کنید.
+- This is a small model that also runs on CPU. With the sample data it learns simple skills, but open-ended ChatGPT-like conversation **requires far more data (gigabytes of text) and strong hardware (a GPU)**.
+- "Self-improvement" means improving the weights, hyperparameters and model size against measurable criteria. The model does not rewrite its own code — deliberately, because unsupervised code changes would make the system untrustworthy.
+- The model only improves at things that can be checked automatically. For each new ability you want, add a verifiable skill or new facts.
 
-## تست‌ها
+## Tests
 
 ```bash
 pip install pytest
